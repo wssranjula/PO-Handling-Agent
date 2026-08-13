@@ -1,0 +1,21 @@
+Metadata-Version: 2.4
+Name: po-intake-agent
+Version: 0.1.0
+Summary: Email-to-purchase-order intake workflow built with LangGraph
+Requires-Python: <3.14,>=3.12
+Requires-Dist: aiosqlite<1,>=0.21
+Requires-Dist: asyncpg<1,>=0.30
+Requires-Dist: fastapi<1,>=0.116
+Requires-Dist: langgraph<0.7,>=0.6
+Requires-Dist: langsmith<0.5,>=0.3.45
+Requires-Dist: pgvector<1,>=0.4
+Requires-Dist: pydantic-settings<3,>=2.10
+Requires-Dist: pypdf<7,>=6
+Requires-Dist: python-multipart<1,>=0.0.20
+Requires-Dist: sqlalchemy[asyncio]<3,>=2.0.40
+Requires-Dist: uvicorn[standard]<1,>=0.35
+Provides-Extra: dev
+Requires-Dist: httpx<1,>=0.28; extra == "dev"
+Requires-Dist: pytest<10,>=8.4; extra == "dev"
+Requires-Dist: pytest-asyncio<2,>=1.1; extra == "dev"
+Requires-Dist: ruff<1,>=0.12; extra == "dev"

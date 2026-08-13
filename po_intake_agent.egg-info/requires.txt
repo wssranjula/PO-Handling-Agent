@@ -1,0 +1,17 @@
+aiosqlite<1,>=0.21
+asyncpg<1,>=0.30
+fastapi<1,>=0.116
+langgraph<0.7,>=0.6
+langsmith<0.5,>=0.3.45
+pgvector<1,>=0.4
+pydantic-settings<3,>=2.10
+pypdf<7,>=6
+python-multipart<1,>=0.0.20
+sqlalchemy[asyncio]<3,>=2.0.40
+uvicorn[standard]<1,>=0.35
+
+[dev]
+httpx<1,>=0.28
+pytest<10,>=8.4
+pytest-asyncio<2,>=1.1
+ruff<1,>=0.12
