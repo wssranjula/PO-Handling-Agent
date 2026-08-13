@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from app.services.extraction import DevelopmentExtractor
 from app.workflow import build_workflow
 
 
@@ -21,7 +22,7 @@ item|BTL-BLU-16|Blue insulated bottle 16oz|100|48.50
 """,
         encoding="utf-8",
     )
-    result = await build_workflow().ainvoke(
+    result = await build_workflow(extractor=DevelopmentExtractor(), enable_rag=False).ainvoke(
         {"attachment_path": str(document), "content_type": "text/plain", "run_id": "test"}
     )
     assert result["route"] == "auto_process"
@@ -32,7 +33,7 @@ item|BTL-BLU-16|Blue insulated bottle 16oz|100|48.50
 async def test_incomplete_order_routes_to_review(tmp_path: Path) -> None:
     document = tmp_path / "po.txt"
     document.write_text("PO Number: PO-1\nCustomer: Acme", encoding="utf-8")
-    result = await build_workflow().ainvoke(
+    result = await build_workflow(extractor=DevelopmentExtractor(), enable_rag=False).ainvoke(
         {"attachment_path": str(document), "content_type": "text/plain", "run_id": "test"}
     )
     assert result["route"] == "human_review"

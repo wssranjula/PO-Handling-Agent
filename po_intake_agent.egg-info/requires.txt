@@ -3,6 +3,7 @@ asyncpg<1,>=0.30
 fastapi<1,>=0.116
 langgraph<0.7,>=0.6
 langsmith<0.5,>=0.3.45
+openai<3,>=2.20
 pgvector<1,>=0.4
 pydantic-settings<3,>=2.10
 pypdf<7,>=6

@@ -33,6 +33,7 @@ class ProcessingStatus(StrEnum):
     VALIDATED = "validated"
     AUTO_PROCESSED = "auto_processed"
     NEEDS_REVIEW = "needs_review"
+    REJECTED = "rejected"
     FAILED = "failed"
 
 
@@ -85,6 +86,8 @@ class ProcessingRun(Base):
 
     attachment: Mapped[Attachment] = relationship(back_populates="run")
     review_case: Mapped["ReviewCase | None"] = relationship(back_populates="run")
+    enrichment: Mapped["RunEnrichment | None"] = relationship(back_populates="run")
+    draft_order: Mapped["DraftOrder | None"] = relationship(back_populates="run")
 
 
 class ReviewCase(Base):
@@ -98,6 +101,37 @@ class ReviewCase(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     run: Mapped[ProcessingRun] = relationship(back_populates="review_case")
+
+
+class RunEnrichment(Base):
+    __tablename__ = "run_enrichments"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    run_id: Mapped[str] = mapped_column(ForeignKey("processing_runs.id"), unique=True, index=True)
+    resolved_order: Mapped[dict[str, Any]] = mapped_column(JSON)
+    matches: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    run: Mapped[ProcessingRun] = relationship(back_populates="enrichment")
+
+
+class DraftOrder(Base):
+    __tablename__ = "draft_orders"
+    __table_args__ = (
+        UniqueConstraint("customer_id", "po_number", name="uq_draft_customer_po_number"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    run_id: Mapped[str] = mapped_column(ForeignKey("processing_runs.id"), unique=True, index=True)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("customers.id"), index=True)
+    po_number: Mapped[str] = mapped_column(String(255), index=True)
+    currency: Mapped[str] = mapped_column(String(3))
+    total: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    order_data: Mapped[dict[str, Any]] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(32), default="draft")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    run: Mapped[ProcessingRun] = relationship(back_populates="draft_order")
 
 
 class Customer(Base):
@@ -119,6 +153,21 @@ class Product(Base):
     aliases: Mapped[list[str]] = mapped_column(JSON, default=list)
     standard_unit_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class CustomerProductPrice(Base):
+    __tablename__ = "customer_product_prices"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("customers.id"), index=True)
+    sku: Mapped[str] = mapped_column(ForeignKey("products.sku"), index=True)
+    unit_price: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    currency: Mapped[str] = mapped_column(String(3))
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    __table_args__ = (
+        UniqueConstraint("customer_id", "sku", "currency", name="uq_customer_sku_currency"),
+    )
 
 
 class KnowledgeDocument(Base):
