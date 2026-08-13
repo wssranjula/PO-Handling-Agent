@@ -1,0 +1,19 @@
+PURCHASE ORDER
+Order Reference: NS-PRICE-TEST-001
+Issue Date: 13 Aug 2026
+Ordering Customer: Northstar Home Stores
+Currency: USD
+Payment Terms: Net 45
+Ship To: Northstar Home Stores - Central Warehouse, Warehouse 4, 18 Harbour Road,
+Colombo 01, Sri Lanka, Attention: Receiving Desk
+
+Line 1
+Item reference: MUG-WHT
+Description: White ceramic mug, retail boxed
+Quantity: 10
+Unit price: 9.00
+Line total: 90.00
+
+Subtotal: 90.00
+Tax: 0.00
+Total: 90.00

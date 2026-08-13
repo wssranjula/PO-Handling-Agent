@@ -12,12 +12,12 @@ class Route(StrEnum):
 
 class LineItem(BaseModel):
     line_number: int = Field(ge=1)
-    raw_description: str = Field(min_length=1)
+    raw_description: str | None = Field(default=None, min_length=1)
     raw_sku: str | None = None
     resolved_sku: str | None = None
-    quantity: Decimal = Field(gt=0)
-    unit_price: Decimal = Field(ge=0)
-    line_total: Decimal = Field(ge=0)
+    quantity: Decimal | None = Field(default=None, gt=0)
+    unit_price: Decimal | None = Field(default=None, ge=0)
+    line_total: Decimal | None = Field(default=None, ge=0)
 
 
 class PurchaseOrder(BaseModel):
@@ -37,6 +37,32 @@ class PurchaseOrder(BaseModel):
     line_items: list[LineItem] = Field(default_factory=list)
 
 
+class SourceEvidence(BaseModel):
+    """A verbatim document excerpt supporting one or more extracted fields."""
+
+    field_paths: list[str] = Field(min_length=1)
+    quoted_text: str = Field(min_length=1)
+    page_number: int | None = Field(default=None, ge=1)
+    confidence: float = Field(ge=0, le=1)
+    notes: str | None = None
+
+
+class ExtractionWarning(BaseModel):
+    code: str
+    message: str
+    field_path: str | None = None
+
+
+class PurchaseOrderExtraction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    document_is_purchase_order: bool
+    order: PurchaseOrder
+    evidence: list[SourceEvidence]
+    warnings: list[ExtractionWarning]
+    overall_confidence: float = Field(ge=0, le=1)
+
+
 class ValidationResult(BaseModel):
     code: str
     passed: bool
@@ -44,8 +70,35 @@ class ValidationResult(BaseModel):
     severity: str = "error"
 
 
+class RAGMatch(BaseModel):
+    query: str
+    entity_type: str
+    entity_id: str | None = None
+    entity_name: str | None = None
+    similarity: float = Field(ge=-1, le=1)
+    chunk_id: str
+    source_title: str
+    content: str
+
+
+class EnrichmentResult(BaseModel):
+    order: PurchaseOrder
+    matches: list[RAGMatch]
+
+
 class IntakeResponse(BaseModel):
     message_id: str
     attachment_id: str
     run_id: str
     status: str
+
+
+class ReviewDecision(BaseModel):
+    corrected_order: PurchaseOrder
+    reviewer: str = Field(min_length=1)
+    notes: str | None = None
+
+
+class ReviewRejection(BaseModel):
+    reviewer: str = Field(min_length=1)
+    reason: str = Field(min_length=1)

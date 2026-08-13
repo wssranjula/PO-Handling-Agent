@@ -1,4 +1,5 @@
 import hashlib
+import logging
 from pathlib import Path
 
 from fastapi import UploadFile
@@ -6,11 +7,19 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
-from app.models import Attachment, EmailMessage, ProcessingRun, ProcessingStatus, ReviewCase
+from app.models import (
+    Attachment,
+    EmailMessage,
+    ProcessingRun,
+    ProcessingStatus,
+    ReviewCase,
+    RunEnrichment,
+)
 from app.schemas import IntakeResponse, Route
 from app.workflow import workflow
 
 ALLOWED_TYPES = {"application/pdf", "text/plain", "text/csv", "image/png", "image/jpeg"}
+logger = logging.getLogger(__name__)
 
 
 async def ingest_email(
@@ -22,6 +31,12 @@ async def ingest_email(
     subject: str,
     attachment: UploadFile,
 ) -> IntakeResponse:
+    logger.info(
+        "email_intake_started provider_message_id=%s filename=%s content_type=%s",
+        provider_message_id,
+        attachment.filename,
+        attachment.content_type,
+    )
     existing = await session.scalar(
         select(EmailMessage).where(EmailMessage.provider_message_id == provider_message_id)
     )
@@ -35,6 +50,12 @@ async def ingest_email(
                 select(ProcessingRun).where(ProcessingRun.attachment_id == existing_attachment.id)
             )
         if existing_attachment and existing_run:
+            logger.info(
+                "email_intake_duplicate provider_message_id=%s run_id=%s status=%s",
+                provider_message_id,
+                existing_run.id,
+                existing_run.status,
+            )
             return IntakeResponse(
                 message_id=existing.id,
                 attachment_id=existing_attachment.id,
@@ -66,6 +87,13 @@ async def ingest_email(
     storage_dir.mkdir(parents=True, exist_ok=True)
     storage_path = storage_dir / f"{digest[:12]}-{safe_name}"
     storage_path.write_bytes(contents)
+    logger.info(
+        "attachment_stored email_id=%s filename=%s bytes=%s sha256_prefix=%s",
+        email.id,
+        safe_name,
+        len(contents),
+        digest[:12],
+    )
 
     stored = Attachment(
         email_id=email.id,
@@ -81,6 +109,7 @@ async def ingest_email(
     run = ProcessingRun(attachment_id=stored.id)
     session.add(run)
     await session.commit()
+    logger.info("processing_run_created run_id=%s attachment_id=%s", run.id, stored.id)
 
     try:
         result = await workflow.ainvoke(
@@ -88,19 +117,46 @@ async def ingest_email(
                 "run_id": run.id,
                 "attachment_path": stored.storage_path,
                 "content_type": stored.content_type,
-            }
+            },
+            config={
+                "run_name": "purchase_order_intake",
+                "tags": ["po-intake", settings.app_env],
+                "metadata": {
+                    "processing_run_id": run.id,
+                    "attachment_id": stored.id,
+                    "provider_message_id": provider_message_id,
+                },
+            },
         )
-        run.extracted_data = result.get("extracted_order")
+        run.extracted_data = result.get("extraction")
         run.validation_results = result.get("validation_results")
         run.review_reasons = result.get("review_reasons")
+        if result.get("enrichment"):
+            enrichment = result["enrichment"]
+            session.add(
+                RunEnrichment(
+                    run_id=run.id,
+                    resolved_order=enrichment["order"],
+                    matches=enrichment["matches"],
+                )
+            )
         if result["route"] == Route.AUTO_PROCESS:
             run.status = ProcessingStatus.AUTO_PROCESSED
         else:
             run.status = ProcessingStatus.NEEDS_REVIEW
             session.add(ReviewCase(run_id=run.id, reasons=run.review_reasons or []))
+        logger.info(
+            "processing_run_completed run_id=%s status=%s review_reasons=%s",
+            run.id,
+            run.status,
+            run.review_reasons or [],
+        )
     except Exception as exc:
         run.status = ProcessingStatus.FAILED
         run.error = {"type": type(exc).__name__, "message": str(exc)}
+        logger.exception(
+            "processing_run_failed run_id=%s error_type=%s", run.id, type(exc).__name__
+        )
 
     await session.commit()
     return IntakeResponse(

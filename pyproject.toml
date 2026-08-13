@@ -13,6 +13,7 @@ dependencies = [
   "fastapi>=0.116,<1",
   "langgraph>=0.6,<0.7",
   "langsmith>=0.3.45,<0.5",
+  "openai>=2.20,<3",
   "pgvector>=0.4,<1",
   "pydantic-settings>=2.10,<3",
   "pypdf>=6,<7",

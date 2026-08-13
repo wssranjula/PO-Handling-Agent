@@ -17,5 +17,6 @@ po_intake_agent.egg-info/SOURCES.txt
 po_intake_agent.egg-info/dependency_links.txt
 po_intake_agent.egg-info/requires.txt
 po_intake_agent.egg-info/top_level.txt
+tests/test_llm_extraction.py
 tests/test_validation.py
 tests/test_workflow.py

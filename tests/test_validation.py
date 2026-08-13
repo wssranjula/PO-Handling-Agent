@@ -36,3 +36,17 @@ def test_total_mismatch_fails() -> None:
     order = valid_order().model_copy(update={"total": Decimal("4800")})
     failed = {result.code for result in validate_purchase_order(order) if not result.passed}
     assert "DOCUMENT_TOTAL_RECONCILES" in failed
+
+
+def test_missing_line_value_routes_to_validation_failure() -> None:
+    order = valid_order()
+    order.line_items[0].unit_price = None
+    failed = {result.code for result in validate_purchase_order(order) if not result.passed}
+    assert "LINE_1_REQUIRED_UNIT_PRICE" in failed
+
+
+def test_quantity_times_price_must_match_line_total() -> None:
+    order = valid_order()
+    order.line_items[0].unit_price = Decimal("40.00")
+    failed = {result.code for result in validate_purchase_order(order) if not result.passed}
+    assert "LINE_1_TOTAL_RECONCILES" in failed
