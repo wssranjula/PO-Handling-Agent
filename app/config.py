@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     rag_top_k: int = Field(default=4, gt=0, le=20)
     rag_match_threshold: float = Field(default=0.70, ge=0, le=1)
     price_tolerance_percent: float = Field(default=1.0, ge=0, le=100)
+    gmail_enabled: bool = False
+    gmail_credentials_path: Path = Path("secrets/gmail-credentials.json")
+    gmail_token_path: Path = Path("secrets/gmail-token.json")
+    gmail_poll_interval_seconds: int = Field(default=30, ge=10)
+    gmail_query: str = "is:unread has:attachment newer_than:7d"
+    gmail_max_messages_per_poll: int = Field(default=25, ge=1, le=100)
 
 
 @lru_cache

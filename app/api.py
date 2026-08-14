@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import Annotated
@@ -13,6 +14,7 @@ from app.db import close_database, get_session, initialize_database
 from app.logging_config import bind_request_id, configure_logging, reset_request_id
 from app.models import Customer, DraftOrder, ProcessingRun, ReviewCase, RunEnrichment
 from app.schemas import IntakeResponse, ReviewDecision, ReviewRejection
+from app.services.gmail import gmail_polling_loop, poll_gmail_once, stop_gmail_poller
 from app.services.intake import ingest_email
 from app.services.review import approve_review_case, reject_review_case
 
@@ -23,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
+async def lifespan(application: FastAPI):
     logger.info(
         "application_start env=%s tracing=%s langsmith_project=%s",
         settings.app_env,
@@ -32,7 +34,13 @@ async def lifespan(_: FastAPI):
     )
     await initialize_database()
     logger.info("database_initialized")
+    application.state.gmail_task = None
+    if settings.gmail_enabled:
+        application.state.gmail_task = asyncio.create_task(
+            gmail_polling_loop(settings), name="gmail-poller"
+        )
     yield
+    await stop_gmail_poller(application.state.gmail_task)
     await close_database()
     logger.info("application_stopped")
 
@@ -73,6 +81,26 @@ async def request_logging(request: Request, call_next):
 async def health(session: SessionDependency) -> dict[str, str]:
     await session.execute(text("SELECT 1"))
     return {"status": "ok"}
+
+
+@app.get("/integrations/gmail/status")
+async def gmail_status() -> dict:
+    current = get_settings()
+    return {
+        "enabled": current.gmail_enabled,
+        "authorized": current.gmail_token_path.exists(),
+        "credentials_configured": current.gmail_credentials_path.exists(),
+        "poll_interval_seconds": current.gmail_poll_interval_seconds,
+        "query": current.gmail_query,
+    }
+
+
+@app.post("/integrations/gmail/poll")
+async def poll_gmail_now() -> dict[str, int]:
+    try:
+        return await poll_gmail_once(get_settings())
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.post("/webhooks/email", response_model=IntakeResponse, status_code=202)

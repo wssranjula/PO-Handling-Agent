@@ -56,6 +56,43 @@ draft can be created.
 
 Open `http://127.0.0.1:8000/docs` for the API UI.
 
+## Connect a Gmail mailbox
+
+The API can monitor Gmail for unread messages with attachments and send supported PDF, CSV, and
+text attachments through the same intake workflow. Gmail access is read-only: the integration does
+not mark messages as read, delete them, or change their labels. Gmail message and attachment IDs are
+stored as provider IDs so polling the same message again does not create duplicate runs.
+
+1. In Google Cloud, create or select a project and enable the Gmail API.
+2. Configure the Google Auth consent screen. For a personal Gmail account, choose `External` and
+   add your own address as a test user while the application is in testing mode.
+3. Create an OAuth client with application type `Desktop app`.
+4. Download the client JSON to `secrets/gmail-credentials.json`.
+5. Complete the one-time browser authorization:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\gmail_authorize.py
+```
+
+The command saves the refreshable user token to `secrets/gmail-token.json`. The entire `secrets/`
+directory is ignored by Git.
+
+Enable polling in `.env` and restart FastAPI:
+
+```dotenv
+GMAIL_ENABLED=true
+GMAIL_POLL_INTERVAL_SECONDS=30
+GMAIL_QUERY="is:unread has:attachment newer_than:7d"
+```
+
+For a dedicated intake mailbox, a Gmail filter and label are useful. For example, apply a
+`PO-Intake` label to selected messages and use `GMAIL_QUERY="label:PO-Intake has:attachment"`.
+
+Check `GET /integrations/gmail/status` for configuration state or call
+`POST /integrations/gmail/poll` to trigger an immediate mailbox scan. The automatic poller starts
+only when `GMAIL_ENABLED=true`; the manual endpoint can be used after authorization regardless of
+that setting.
+
 ## Operations UI
 
 The React dashboard has separate pages for validated orders and purchase orders requiring human
