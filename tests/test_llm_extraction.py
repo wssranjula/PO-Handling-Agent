@@ -50,6 +50,35 @@ async def test_openai_extractor_uses_pydantic_structured_output() -> None:
     assert result.order.po_number == "PO-42"
     assert responses.kwargs["text_format"] is PurchaseOrderExtraction
     assert "untrusted data" in responses.kwargs["input"][0]["content"]
+    assert "JSON numbers only" in responses.kwargs["input"][0]["content"]
+
+
+def test_structured_output_normalizes_labeled_numeric_values() -> None:
+    parsed = PurchaseOrderExtraction.model_validate(
+        {
+            "document_is_purchase_order": True,
+            "order": {
+                "subtotal": "USD 1,234.50",
+                "tax": "$10.00",
+                "total": "1,244.50 total",
+                "line_items": [
+                    {
+                        "line_number": 1,
+                        "quantity": "12 units",
+                        "unit_price": "USD 7.50 ea",
+                        "line_total": "$90.00",
+                    }
+                ],
+            },
+            "evidence": [],
+            "warnings": [],
+            "overall_confidence": 0.9,
+        }
+    )
+
+    assert parsed.order.line_items[0].quantity == 12
+    assert parsed.order.line_items[0].unit_price == 7.5
+    assert parsed.order.subtotal == 1234.5
 
 
 @pytest.mark.asyncio

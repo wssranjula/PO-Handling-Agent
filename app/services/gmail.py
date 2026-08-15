@@ -18,7 +18,7 @@ from starlette.datastructures import Headers
 from app.config import Settings
 from app.db import SessionFactory
 from app.errors import IntegrationUnavailableError
-from app.models import Attachment, EmailMessage
+from app.models import Attachment, EmailMessage, ProcessingRun, ProcessingStatus
 from app.services.intake import ingest_email
 
 GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
@@ -113,8 +113,9 @@ async def gmail_attachment_already_ingested(
     # recognizing those rows so an upgrade cannot reprocess a customer's PO.
     legacy_provider_id = f"{provider_message_id}:{provider_attachment_id}"
     async with SessionFactory() as session:
-        result = await session.scalar(
-            select(Attachment.id)
+        status = await session.scalar(
+            select(ProcessingRun.status)
+            .join(Attachment, Attachment.id == ProcessingRun.attachment_id)
             .join(EmailMessage, EmailMessage.id == Attachment.email_id)
             .where(
                 or_(
@@ -129,7 +130,7 @@ async def gmail_attachment_already_ingested(
                 )
             )
         )
-        return result is not None
+        return status is not None and status != ProcessingStatus.FAILED
 
 
 async def _poll_gmail_once(settings: Settings, service=None) -> dict[str, int]:

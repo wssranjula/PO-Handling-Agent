@@ -18,6 +18,18 @@ def normalize(value: str | None) -> str:
     return re.sub(r"[^a-z0-9]", "", (value or "").lower())
 
 
+def matches_product_reference(
+    product: Product, raw_sku: str | None, description: str | None
+) -> bool:
+    references = {normalize(raw_sku), normalize(description)} - {""}
+    known_values = {
+        normalize(product.sku),
+        normalize(product.name),
+        *(normalize(alias) for alias in product.aliases),
+    }
+    return bool(references & known_values)
+
+
 class EmbeddingService:
     def __init__(self, settings: Settings, client: Any | None = None) -> None:
         self.settings = settings
@@ -153,13 +165,13 @@ class RAGService:
             )
             matches = await self.search(session, query, "product")
             all_matches.extend(matches)
-            raw_sku = normalize(item.raw_sku)
             exact_product = next(
                 (
                     product
                     for product in products
-                    if raw_sku
-                    in {normalize(product.sku), *(normalize(alias) for alias in product.aliases)}
+                    if matches_product_reference(
+                        product, item.raw_sku, item.raw_description
+                    )
                 ),
                 None,
             )

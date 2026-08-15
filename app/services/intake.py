@@ -42,6 +42,8 @@ async def ingest_email(
     existing = await session.scalar(
         select(EmailMessage).where(EmailMessage.provider_message_id == provider_message_id)
     )
+    stored = None
+    run = None
     if existing:
         attachment_query = select(Attachment).where(Attachment.email_id == existing.id)
         if provider_attachment_id:
@@ -54,7 +56,7 @@ async def ingest_email(
             existing_run = await session.scalar(
                 select(ProcessingRun).where(ProcessingRun.attachment_id == existing_attachment.id)
             )
-        if existing_attachment and existing_run:
+        if existing_attachment and existing_run and existing_run.status != ProcessingStatus.FAILED:
             logger.info(
                 "email_intake_duplicate provider_message_id=%s run_id=%s status=%s",
                 provider_message_id,
@@ -67,57 +69,70 @@ async def ingest_email(
                 run_id=existing_run.id,
                 status=existing_run.status,
             )
-
-    content_type = attachment.content_type or "application/octet-stream"
-    if content_type not in ALLOWED_TYPES:
-        raise InvalidAttachmentError(f"Unsupported attachment type: {content_type}")
-
-    contents = await attachment.read(settings.max_attachment_bytes + 1)
-    if len(contents) > settings.max_attachment_bytes:
-        raise InvalidAttachmentError("Attachment exceeds configured size limit")
-    if not contents:
-        raise InvalidAttachmentError("Attachment is empty")
+        if existing_attachment:
+            stored = existing_attachment
+            run = existing_run
 
     email = existing
-    if email is None:
-        email = EmailMessage(
-            provider_message_id=provider_message_id,
-            sender=sender,
-            subject=subject,
+    if stored is None:
+        content_type = attachment.content_type or "application/octet-stream"
+        if content_type not in ALLOWED_TYPES:
+            raise InvalidAttachmentError(f"Unsupported attachment type: {content_type}")
+
+        contents = await attachment.read(settings.max_attachment_bytes + 1)
+        if len(contents) > settings.max_attachment_bytes:
+            raise InvalidAttachmentError("Attachment exceeds configured size limit")
+        if not contents:
+            raise InvalidAttachmentError("Attachment is empty")
+
+        if email is None:
+            email = EmailMessage(
+                provider_message_id=provider_message_id,
+                sender=sender,
+                subject=subject,
+            )
+            session.add(email)
+            await session.flush()
+
+        digest = hashlib.sha256(contents).hexdigest()
+        safe_name = Path(attachment.filename or "attachment").name
+        storage_dir = settings.attachment_dir / email.id
+        storage_dir.mkdir(parents=True, exist_ok=True)
+        storage_path = storage_dir / f"{digest[:12]}-{safe_name}"
+        storage_path.write_bytes(contents)
+        logger.info(
+            "attachment_stored email_id=%s filename=%s bytes=%s sha256_prefix=%s",
+            email.id,
+            safe_name,
+            len(contents),
+            digest[:12],
         )
-        session.add(email)
+
+        stored = Attachment(
+            email_id=email.id,
+            provider_attachment_id=provider_attachment_id,
+            filename=safe_name,
+            content_type=content_type,
+            size_bytes=len(contents),
+            sha256=digest,
+            storage_path=str(storage_path.resolve()),
+        )
+        session.add(stored)
         await session.flush()
 
-    digest = hashlib.sha256(contents).hexdigest()
-    safe_name = Path(attachment.filename or "attachment").name
-    storage_dir = settings.attachment_dir / email.id
-    storage_dir.mkdir(parents=True, exist_ok=True)
-    storage_path = storage_dir / f"{digest[:12]}-{safe_name}"
-    storage_path.write_bytes(contents)
-    logger.info(
-        "attachment_stored email_id=%s filename=%s bytes=%s sha256_prefix=%s",
-        email.id,
-        safe_name,
-        len(contents),
-        digest[:12],
-    )
-
-    stored = Attachment(
-        email_id=email.id,
-        provider_attachment_id=provider_attachment_id,
-        filename=safe_name,
-        content_type=content_type,
-        size_bytes=len(contents),
-        sha256=digest,
-        storage_path=str(storage_path.resolve()),
-    )
-    session.add(stored)
-    await session.flush()
-
-    run = ProcessingRun(attachment_id=stored.id)
-    session.add(run)
+    if run is None:
+        run = ProcessingRun(attachment_id=stored.id)
+        session.add(run)
+        event = "processing_run_created"
+    else:
+        run.status = ProcessingStatus.RECEIVED
+        run.extracted_data = None
+        run.validation_results = None
+        run.review_reasons = None
+        run.error = None
+        event = "processing_run_retry_started"
     await session.commit()
-    logger.info("processing_run_created run_id=%s attachment_id=%s", run.id, stored.id)
+    logger.info("%s run_id=%s attachment_id=%s", event, run.id, stored.id)
 
     try:
         graph = workflow_graph or get_workflow()

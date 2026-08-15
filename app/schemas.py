@@ -1,8 +1,21 @@
+import re
 from datetime import date
 from decimal import Decimal
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+DECIMAL_TOKEN = re.compile(r"[-+]?(?:\d[\d,]*\.?\d*|\.\d+)")
+
+
+def normalize_document_decimal(value):
+    """Remove common document labels while rejecting genuinely ambiguous numbers."""
+    if not isinstance(value, str):
+        return value
+    tokens = DECIMAL_TOKEN.findall(value)
+    if len(tokens) != 1:
+        return value
+    return tokens[0].replace(",", "")
 
 
 class Route(StrEnum):
@@ -18,6 +31,10 @@ class LineItem(BaseModel):
     quantity: Decimal | None = Field(default=None, gt=0)
     unit_price: Decimal | None = Field(default=None, ge=0)
     line_total: Decimal | None = Field(default=None, ge=0)
+
+    _normalize_numbers = field_validator(
+        "quantity", "unit_price", "line_total", mode="before"
+    )(normalize_document_decimal)
 
 
 class PurchaseOrder(BaseModel):
@@ -35,6 +52,10 @@ class PurchaseOrder(BaseModel):
     tax: Decimal | None = Field(default=None, ge=0)
     total: Decimal | None = Field(default=None, ge=0)
     line_items: list[LineItem] = Field(default_factory=list)
+
+    _normalize_totals = field_validator("subtotal", "tax", "total", mode="before")(
+        normalize_document_decimal
+    )
 
 
 class SourceEvidence(BaseModel):
