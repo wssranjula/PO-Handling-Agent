@@ -13,9 +13,17 @@ export function ReviewsPage() {
   const [error, setError] = useState('')
   const load = () => {
     setLoading(true)
+    setError('')
     api.listReviews().then(setReviews).catch((err: Error) => setError(err.message)).finally(() => setLoading(false))
   }
-  useEffect(load, [])
+  useEffect(() => {
+    let active = true
+    api.listReviews()
+      .then((result) => { if (active) setReviews(result) })
+      .catch((err: Error) => { if (active) setError(err.message) })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [])
 
   return (
     <section className="page">

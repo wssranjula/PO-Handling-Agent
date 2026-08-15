@@ -53,10 +53,18 @@ class EmailMessage(Base):
 
 class Attachment(Base):
     __tablename__ = "attachments"
-    __table_args__ = (UniqueConstraint("email_id", "sha256", name="uq_email_attachment_hash"),)
+    __table_args__ = (
+        UniqueConstraint("email_id", "sha256", name="uq_email_attachment_hash"),
+        UniqueConstraint(
+            "email_id",
+            "provider_attachment_id",
+            name="uq_email_provider_attachment",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     email_id: Mapped[str] = mapped_column(ForeignKey("email_messages.id"), index=True)
+    provider_attachment_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     filename: Mapped[str] = mapped_column(String(255))
     content_type: Mapped[str] = mapped_column(String(255))
     size_bytes: Mapped[int] = mapped_column(Integer)

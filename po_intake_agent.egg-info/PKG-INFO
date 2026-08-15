@@ -3,9 +3,13 @@ Name: po-intake-agent
 Version: 0.1.0
 Summary: Email-to-purchase-order intake workflow built with LangGraph
 Requires-Python: <3.14,>=3.12
+Requires-Dist: alembic<2,>=1.16
 Requires-Dist: aiosqlite<1,>=0.21
 Requires-Dist: asyncpg<1,>=0.30
 Requires-Dist: fastapi<1,>=0.116
+Requires-Dist: google-api-python-client<3,>=2.180
+Requires-Dist: google-auth-httplib2<1,>=0.2
+Requires-Dist: google-auth-oauthlib<2,>=1.2
 Requires-Dist: langgraph<0.7,>=0.6
 Requires-Dist: langsmith<0.5,>=0.3.45
 Requires-Dist: openai<3,>=2.20

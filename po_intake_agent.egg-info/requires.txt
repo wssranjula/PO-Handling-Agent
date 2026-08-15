@@ -1,6 +1,10 @@
+alembic<2,>=1.16
 aiosqlite<1,>=0.21
 asyncpg<1,>=0.30
 fastapi<1,>=0.116
+google-api-python-client<3,>=2.180
+google-auth-httplib2<1,>=0.2
+google-auth-oauthlib<2,>=1.2
 langgraph<0.7,>=0.6
 langsmith<0.5,>=0.3.45
 openai<3,>=2.20

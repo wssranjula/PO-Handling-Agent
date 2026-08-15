@@ -17,7 +17,14 @@ export function OrdersPage() {
     setError('')
     api.listOrders().then(setOrders).catch((err: Error) => setError(err.message)).finally(() => setLoading(false))
   }
-  useEffect(load, [])
+  useEffect(() => {
+    let active = true
+    api.listOrders()
+      .then((result) => { if (active) setOrders(result) })
+      .catch((err: Error) => { if (active) setError(err.message) })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [])
 
   return (
     <section className="page">

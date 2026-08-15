@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
+from app.errors import ConflictError, ResourceNotFoundError
 from app.models import DraftOrder, ProcessingRun, ProcessingStatus, ReviewCase, RunEnrichment
 from app.schemas import PurchaseOrder, ReviewDecision, ReviewRejection
 from app.services.rag import RAGService
@@ -32,10 +33,10 @@ async def approve_review_case(
     settings: Settings,
 ) -> dict:
     if review.status != "open":
-        raise ValueError("Review case is not open")
+        raise ConflictError("Review case is not open")
     run = await session.get(ProcessingRun, review.run_id)
     if run is None:
-        raise ValueError("Processing run not found")
+        raise ResourceNotFoundError("Processing run not found")
 
     corrected_order = recalculate_review_totals(decision.corrected_order)
     enrichment = await RAGService(settings).enrich(session, corrected_order)
@@ -95,10 +96,10 @@ async def reject_review_case(
     rejection: ReviewRejection,
 ) -> dict:
     if review.status != "open":
-        raise ValueError("Review case is not open")
+        raise ConflictError("Review case is not open")
     run = await session.get(ProcessingRun, review.run_id)
     if run is None:
-        raise ValueError("Processing run not found")
+        raise ResourceNotFoundError("Processing run not found")
 
     review.status = "rejected"
     review.resolution = {
