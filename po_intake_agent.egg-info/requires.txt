@@ -1,3 +1,4 @@
+alembic<2,>=1.16
 aiosqlite<1,>=0.21
 asyncpg<1,>=0.30
 fastapi<1,>=0.116

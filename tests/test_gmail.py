@@ -2,6 +2,7 @@ import base64
 
 from app.services.gmail import (
     decode_base64url,
+    gmail_attachment_provider_id,
     gmail_provider_id,
     iter_message_parts,
     message_headers,
@@ -48,6 +49,7 @@ def test_normalizes_message_header_names() -> None:
 
 def test_provider_id_uses_short_mime_part_id() -> None:
     part = {"partId": "2.1", "body": {"attachmentId": "x" * 600}}
+    assert gmail_attachment_provider_id(part) == "2.1"
     assert gmail_provider_id("message-123", part) == "gmail:message-123:2.1"
 
 

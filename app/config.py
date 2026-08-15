@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     rag_match_threshold: float = Field(default=0.70, ge=0, le=1)
     price_tolerance_percent: float = Field(default=1.0, ge=0, le=100)
     gmail_enabled: bool = False
+    gmail_poller_in_api: bool = True
     gmail_credentials_path: Path = Path("secrets/gmail-credentials.json")
     gmail_token_path: Path = Path("secrets/gmail-token.json")
     gmail_poll_interval_seconds: int = Field(default=30, ge=10)

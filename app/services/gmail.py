@@ -12,12 +12,13 @@ from fastapi import UploadFile
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from starlette.datastructures import Headers
 
 from app.config import Settings
 from app.db import SessionFactory
-from app.models import EmailMessage
+from app.errors import IntegrationUnavailableError
+from app.models import Attachment, EmailMessage
 from app.services.intake import ingest_email
 
 GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
@@ -44,19 +45,24 @@ def message_headers(payload: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def gmail_provider_id(message_id: str, part: dict[str, Any]) -> str:
-    """Build a stable ID that fits the database's 255-character provider ID column."""
+def gmail_attachment_provider_id(part: dict[str, Any]) -> str:
+    """Return a stable, compact identifier for a MIME attachment part."""
     part_id = part.get("partId")
     if not part_id:
         attachment_id = part.get("body", {}).get("attachmentId", "")
         part_id = hashlib.sha256(attachment_id.encode()).hexdigest()[:16]
-    return f"gmail:{message_id}:{part_id}"
+    return str(part_id)
+
+
+def gmail_provider_id(message_id: str, part: dict[str, Any]) -> str:
+    """Backward-compatible combined identifier used in logs and diagnostics."""
+    return f"gmail:{message_id}:{gmail_attachment_provider_id(part)}"
 
 
 def load_gmail_credentials(settings: Settings) -> Credentials:
     token_path = settings.gmail_token_path
     if not token_path.exists():
-        raise RuntimeError(
+        raise IntegrationUnavailableError(
             f"Gmail token not found at {token_path}. Run scripts/gmail_authorize.py first."
         )
     credentials = Credentials.from_authorized_user_file(str(token_path), GMAIL_SCOPES)
@@ -65,7 +71,9 @@ def load_gmail_credentials(settings: Settings) -> Credentials:
         token_path.parent.mkdir(parents=True, exist_ok=True)
         token_path.write_text(credentials.to_json(), encoding="utf-8")
     if not credentials.valid:
-        raise RuntimeError("Gmail OAuth credentials are invalid or have been revoked")
+        raise IntegrationUnavailableError(
+            "Gmail OAuth credentials are invalid or have been revoked"
+        )
     return credentials
 
 
@@ -98,11 +106,27 @@ async def attachment_bytes(service, message_id: str, part: dict[str, Any]) -> by
     return decode_base64url(result.get("data", ""))
 
 
-async def gmail_attachment_already_ingested(provider_message_id: str) -> bool:
+async def gmail_attachment_already_ingested(
+    provider_message_id: str, provider_attachment_id: str
+) -> bool:
+    # Older releases stored the message and MIME-part IDs in one column. Keep
+    # recognizing those rows so an upgrade cannot reprocess a customer's PO.
+    legacy_provider_id = f"{provider_message_id}:{provider_attachment_id}"
     async with SessionFactory() as session:
         result = await session.scalar(
-            select(EmailMessage.id).where(
-                EmailMessage.provider_message_id == provider_message_id
+            select(Attachment.id)
+            .join(EmailMessage, EmailMessage.id == Attachment.email_id)
+            .where(
+                or_(
+                    (
+                        (EmailMessage.provider_message_id == provider_message_id)
+                        & (
+                            Attachment.provider_attachment_id
+                            == provider_attachment_id
+                        )
+                    ),
+                    EmailMessage.provider_message_id == legacy_provider_id,
+                )
             )
         )
         return result is not None
@@ -144,8 +168,9 @@ async def _poll_gmail_once(settings: Settings, service=None) -> dict[str, int]:
                 stats["skipped"] += 1
                 continue
             stats["attachments"] += 1
-            provider_id = gmail_provider_id(message_id, part)
-            if await gmail_attachment_already_ingested(provider_id):
+            provider_id = f"gmail:{message_id}"
+            provider_attachment_id = gmail_attachment_provider_id(part)
+            if await gmail_attachment_already_ingested(provider_id, provider_attachment_id):
                 stats["duplicates"] += 1
                 continue
             contents = await attachment_bytes(service, message_id, part)
@@ -158,18 +183,27 @@ async def _poll_gmail_once(settings: Settings, service=None) -> dict[str, int]:
                 headers=Headers({"content-type": mime_type}),
             )
             try:
-                async with SessionFactory() as session:
-                    result = await ingest_email(
-                        session=session,
-                        settings=settings,
-                        provider_message_id=provider_id,
-                        sender=sender,
-                        subject=subject,
-                        attachment=upload,
-                    )
-                stats["ingested"] += 1
-                if result.status == "failed":
+                try:
+                    async with SessionFactory() as session:
+                        result = await ingest_email(
+                            session=session,
+                            settings=settings,
+                            provider_message_id=provider_id,
+                            sender=sender,
+                            subject=subject,
+                            attachment=upload,
+                            provider_attachment_id=provider_attachment_id,
+                        )
+                    stats["ingested"] += 1
+                    if result.status == "failed":
+                        stats["failed"] += 1
+                except Exception:
                     stats["failed"] += 1
+                    logger.exception(
+                        "gmail_attachment_failed message_id=%s filename=%s",
+                        message_id,
+                        part.get("filename"),
+                    )
             finally:
                 await upload.close()
 
