@@ -18,7 +18,7 @@ from starlette.datastructures import Headers
 from app.config import Settings
 from app.db import SessionFactory
 from app.errors import IntegrationUnavailableError
-from app.models import Attachment, EmailMessage, ProcessingRun, ProcessingStatus
+from app.models import Attachment, EmailMessage, ProcessingRun
 from app.services.intake import ingest_email
 
 GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
@@ -130,7 +130,10 @@ async def gmail_attachment_already_ingested(
                 )
             )
         )
-        return status is not None and status != ProcessingStatus.FAILED
+        # Polling is automatic, so every persisted run is considered handled,
+        # including terminal failures such as an image-only PDF without OCR.
+        # Explicit webhook resubmission can still retry a failed run.
+        return status is not None
 
 
 async def _poll_gmail_once(settings: Settings, service=None) -> dict[str, int]:
